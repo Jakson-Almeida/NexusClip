@@ -6,38 +6,56 @@ import {
 } from "../services/youtubeApi";
 import type { VideoFormat, YouTubeSearchItem } from "../types/youtube";
 import { formatSeconds, parseTimeInput } from "../utils/time";
-import YouTubePlayer from "./YouTubePlayer";
+import ClipTimeline from "./ClipTimeline";
+import YouTubePlayer, { type YouTubePlayerHandle } from "./YouTubePlayer";
 
 interface VideoWorkspaceProps {
   video: YouTubeSearchItem;
   onBack: () => void;
 }
 
+const DEFAULT_CLIP_SECONDS = 15;
+
 export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
   const videoId = video.id.videoId;
   const [duration, setDuration] = useState(0);
   const [startInput, setStartInput] = useState("0:00");
-  const [endInput, setEndInput] = useState("0:30");
+  const [endInput, setEndInput] = useState("0:15");
   const [startSeconds, setStartSeconds] = useState(0);
-  const [endSeconds, setEndSeconds] = useState(30);
+  const [endSeconds, setEndSeconds] = useState(DEFAULT_CLIP_SECONDS);
+  const [currentTime, setCurrentTime] = useState(0);
   const [formats, setFormats] = useState<VideoFormat[]>([]);
   const [quality, setQuality] = useState("best");
   const [loadingFormats, setLoadingFormats] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const getCurrentTimeRef = useRef<(() => number) | null>(null);
+  const playerRef = useRef<YouTubePlayerHandle | null>(null);
+  const previewMonitorRef = useRef<number | null>(null);
+
+  const stopPreviewMonitor = useCallback(() => {
+    if (previewMonitorRef.current !== null) {
+      window.clearInterval(previewMonitorRef.current);
+      previewMonitorRef.current = null;
+    }
+    setPreviewing(false);
+  }, []);
 
   useEffect(() => {
+    stopPreviewMonitor();
     setError(null);
+    setPlayerReady(false);
+    setCurrentTime(0);
     setStartInput("0:00");
-    setEndInput("0:30");
+    setEndInput(formatSeconds(DEFAULT_CLIP_SECONDS));
     setStartSeconds(0);
-    setEndSeconds(30);
+    setEndSeconds(DEFAULT_CLIP_SECONDS);
 
     fetchVideoDuration(videoId).then((seconds) => {
       setDuration(seconds);
       if (seconds > 0) {
-        const defaultEnd = Math.min(30, seconds);
+        const defaultEnd = Math.min(DEFAULT_CLIP_SECONDS, seconds);
         setEndSeconds(defaultEnd);
         setEndInput(formatSeconds(defaultEnd));
       }
@@ -50,21 +68,46 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
         setQuality(items[0]?.format_id || "best");
       })
       .finally(() => setLoadingFormats(false));
-  }, [videoId]);
 
-  const handlePlayerReady = useCallback((getCurrentTime: () => number) => {
-    getCurrentTimeRef.current = getCurrentTime;
+    return () => stopPreviewMonitor();
+  }, [videoId, stopPreviewMonitor]);
+
+  const syncInterval = useCallback(
+    (nextStart: number, nextEnd: number) => {
+      const boundedStart = Math.max(0, nextStart);
+      const boundedEnd =
+        duration > 0
+          ? Math.min(nextEnd, duration)
+          : Math.max(nextEnd, boundedStart + 1);
+
+      const safeEnd = Math.max(boundedEnd, boundedStart + 1);
+
+      setStartSeconds(boundedStart);
+      setEndSeconds(safeEnd);
+      setStartInput(formatSeconds(boundedStart));
+      setEndInput(formatSeconds(safeEnd));
+    },
+    [duration],
+  );
+
+  const handlePlayerReady = useCallback((player: YouTubePlayerHandle) => {
+    playerRef.current = player;
+    setPlayerReady(true);
+
+    const playerDuration = Math.floor(player.getDuration());
+    if (playerDuration > 0) {
+      setDuration(playerDuration);
+      setEndSeconds((currentEnd) => {
+        const nextEnd = Math.min(currentEnd, playerDuration);
+        setEndInput(formatSeconds(nextEnd));
+        return nextEnd;
+      });
+    }
   }, []);
 
-  const syncInterval = (nextStart: number, nextEnd: number) => {
-    const boundedStart = Math.max(0, nextStart);
-    const boundedEnd = duration > 0 ? Math.min(nextEnd, duration) : Math.max(nextEnd, boundedStart + 1);
-
-    setStartSeconds(boundedStart);
-    setEndSeconds(Math.max(boundedEnd, boundedStart + 1));
-    setStartInput(formatSeconds(boundedStart));
-    setEndInput(formatSeconds(Math.max(boundedEnd, boundedStart + 1)));
-  };
+  const handleTimeUpdate = useCallback((time: number) => {
+    setCurrentTime(time);
+  }, []);
 
   const applyManualTimes = () => {
     const parsedStart = parseTimeInput(startInput);
@@ -85,18 +128,79 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
   };
 
   const markCurrentTime = (target: "start" | "end") => {
-    const getter = getCurrentTimeRef.current;
-    if (!getter) {
+    const player = playerRef.current;
+    if (!player) {
       setError("Aguarde o player carregar.");
       return;
     }
 
-    const current = Math.floor(getter());
+    const current = Math.floor(player.getCurrentTime());
     if (target === "start") {
       syncInterval(current, Math.max(endSeconds, current + 1));
     } else {
       syncInterval(startSeconds, Math.max(current, startSeconds + 1));
     }
+    setError(null);
+  };
+
+  const handleTimelineChange = (nextStart: number, nextEnd: number) => {
+    stopPreviewMonitor();
+    syncInterval(nextStart, nextEnd);
+    setError(null);
+  };
+
+  const handleTimelineSeek = (time: number) => {
+    playerRef.current?.seekTo(time);
+    setCurrentTime(time);
+  };
+
+  const playClipPreview = () => {
+    const player = playerRef.current;
+    if (!player) {
+      setError("Aguarde o player carregar.");
+      return;
+    }
+
+    if (endSeconds <= startSeconds) {
+      setError("Selecione um intervalo válido.");
+      return;
+    }
+
+    stopPreviewMonitor();
+    setError(null);
+    setPreviewing(true);
+    player.seekTo(startSeconds);
+    player.playVideo();
+    setCurrentTime(startSeconds);
+
+    previewMonitorRef.current = window.setInterval(() => {
+      const activePlayer = playerRef.current;
+      if (!activePlayer) return;
+
+      const time = activePlayer.getCurrentTime();
+      setCurrentTime(time);
+
+      if (time >= endSeconds - 0.25) {
+        activePlayer.pauseVideo();
+        activePlayer.seekTo(startSeconds);
+        setCurrentTime(startSeconds);
+        stopPreviewMonitor();
+      }
+    }, 150);
+  };
+
+  const clearClipSelection = () => {
+    stopPreviewMonitor();
+    playerRef.current?.pauseVideo();
+
+    if (duration > 0) {
+      syncInterval(0, duration);
+    } else {
+      syncInterval(0, DEFAULT_CLIP_SECONDS);
+    }
+
+    playerRef.current?.seekTo(0);
+    setCurrentTime(0);
     setError(null);
   };
 
@@ -106,6 +210,7 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
       return;
     }
 
+    stopPreviewMonitor();
     setDownloading(true);
     setError(null);
 
@@ -133,6 +238,7 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
   };
 
   const clipDuration = Math.max(0, endSeconds - startSeconds);
+  const hasFullSelection = duration > 0 && startSeconds === 0 && endSeconds === duration;
 
   return (
     <section className="video-workspace">
@@ -155,7 +261,11 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
         </a>
       </div>
 
-      <YouTubePlayer videoId={videoId} onReady={handlePlayerReady} />
+      <YouTubePlayer
+        videoId={videoId}
+        onReady={handlePlayerReady}
+        onTimeUpdate={handleTimeUpdate}
+      />
 
       <div className="clip-panel">
         <div className="clip-panel-header">
@@ -165,6 +275,35 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
               Duração do vídeo: {formatSeconds(duration)}
             </span>
           )}
+        </div>
+
+        <ClipTimeline
+          duration={duration}
+          start={startSeconds}
+          end={endSeconds}
+          currentTime={currentTime}
+          disabled={!playerReady || duration <= 0}
+          onChange={handleTimelineChange}
+          onSeek={handleTimelineSeek}
+        />
+
+        <div className="clip-preview-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={playClipPreview}
+            disabled={!playerReady || endSeconds <= startSeconds}
+          >
+            {previewing ? "Reproduzindo corte..." : "Reproduzir corte"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={clearClipSelection}
+            disabled={!playerReady || hasFullSelection}
+          >
+            Limpar seleção
+          </button>
         </div>
 
         <div className="clip-markers">
@@ -192,7 +331,7 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
               type="text"
               value={endInput}
               onChange={(event) => setEndInput(event.target.value)}
-              placeholder="0:30"
+              placeholder="0:15"
             />
           </label>
           <button type="button" className="btn btn-secondary" onClick={applyManualTimes}>

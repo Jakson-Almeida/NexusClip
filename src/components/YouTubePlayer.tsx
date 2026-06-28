@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 
-interface YouTubePlayerProps {
-  videoId: string;
-  onReady?: (getCurrentTime: () => number) => void;
+export interface YouTubePlayerHandle {
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  seekTo: (seconds: number) => void;
+  playVideo: () => void;
+  pauseVideo: () => void;
+  getPlayerState: () => number;
 }
+
+export const YT_STATE_PLAYING = 1;
 
 declare global {
   interface Window {
@@ -15,12 +21,10 @@ declare global {
           playerVars?: Record<string, number | string>;
           events?: {
             onReady?: () => void;
+            onStateChange?: (event: { data: number }) => void;
           };
         },
-      ) => {
-        getCurrentTime: () => number;
-        destroy: () => void;
-      };
+      ) => YouTubePlayerHandle & { destroy: () => void };
     };
     onYouTubeIframeAPIReady?: () => void;
   }
@@ -52,13 +56,25 @@ function loadYouTubeApi(): Promise<void> {
   return apiPromise;
 }
 
-export default function YouTubePlayer({ videoId, onReady }: YouTubePlayerProps) {
+interface YouTubePlayerProps {
+  videoId: string;
+  onReady?: (player: YouTubePlayerHandle) => void;
+  onTimeUpdate?: (time: number) => void;
+}
+
+export default function YouTubePlayer({
+  videoId,
+  onReady,
+  onTimeUpdate,
+}: YouTubePlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<{ getCurrentTime: () => number; destroy: () => void } | null>(null);
+  const playerRef = useRef<(YouTubePlayerHandle & { destroy: () => void }) | null>(null);
   const onReadyRef = useRef(onReady);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
   const [ready, setReady] = useState(false);
 
   onReadyRef.current = onReady;
+  onTimeUpdateRef.current = onTimeUpdate;
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +95,12 @@ export default function YouTubePlayer({ videoId, onReady }: YouTubePlayerProps) 
           onReady: () => {
             if (cancelled) return;
             setReady(true);
-            onReadyRef.current?.(() => player.getCurrentTime());
+            onReadyRef.current?.(player);
+          },
+          onStateChange: (event) => {
+            if (event.data === YT_STATE_PLAYING) {
+              onTimeUpdateRef.current?.(player.getCurrentTime());
+            }
           },
         },
       });
@@ -91,8 +112,21 @@ export default function YouTubePlayer({ videoId, onReady }: YouTubePlayerProps) 
       cancelled = true;
       playerRef.current?.destroy();
       playerRef.current = null;
+      setReady(false);
     };
   }, [videoId]);
+
+  useEffect(() => {
+    if (!ready) return;
+
+    const intervalId = window.setInterval(() => {
+      const player = playerRef.current;
+      if (!player || player.getPlayerState() !== YT_STATE_PLAYING) return;
+      onTimeUpdateRef.current?.(player.getCurrentTime());
+    }, 200);
+
+    return () => window.clearInterval(intervalId);
+  }, [ready]);
 
   return (
     <div className="youtube-player">
