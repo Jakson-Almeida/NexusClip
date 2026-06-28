@@ -239,7 +239,14 @@ def download_video(video_id: str, quality: str = "best") -> tuple[bool, BytesIO 
     return False, None, None, "Não foi possível baixar o vídeo. Verifique cookies ou tente novamente."
 
 
-def trim_clip(source_path: str, output_path: str, start: float, end: float) -> tuple[bool, str | None]:
+def trim_clip(
+    source_path: str,
+    output_path: str,
+    start: float,
+    end: float,
+    *,
+    video_filter: str | None = None,
+) -> tuple[bool, str | None]:
     if not FFMPEG_AVAILABLE:
         return False, "FFmpeg não está instalado"
 
@@ -256,18 +263,26 @@ def trim_clip(source_path: str, output_path: str, start: float, end: float) -> t
         source_path,
         "-t",
         str(duration),
-        "-c:v",
-        "libx264",
-        "-preset",
-        "fast",
-        "-crf",
-        "23",
-        "-c:a",
-        "aac",
-        "-movflags",
-        "+faststart",
-        output_path,
     ]
+
+    if video_filter:
+        cmd.extend(["-vf", video_filter])
+
+    cmd.extend(
+        [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            output_path,
+        ]
+    )
 
     try:
         subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=True)
@@ -284,7 +299,23 @@ def download_clip(
     start: float,
     end: float,
     quality: str = "best",
+    *,
+    aspect_ratio: str = "original",
+    output_height: int = 1080,
+    crop_focus_x: float = 0.5,
+    crop_focus_y: float = 0.5,
 ) -> tuple[bool, BytesIO | None, str | None, str | None]:
+    from output_formats import build_video_filter, normalize_aspect_ratio, normalize_output_height
+
+    aspect_ratio = normalize_aspect_ratio(aspect_ratio)
+    output_height = normalize_output_height(output_height)
+    video_filter = build_video_filter(
+        aspect_ratio,
+        output_height,
+        crop_focus_x,
+        crop_focus_y,
+    )
+
     success, buffer, filename, error = download_video(video_id, quality)
     if not success or not buffer or not filename:
         return False, None, None, error
@@ -296,12 +327,19 @@ def download_clip(
         with open(source_path, "wb") as handle:
             handle.write(buffer.getvalue())
 
-        ok, trim_error = trim_clip(source_path, clip_path, start, end)
+        ok, trim_error = trim_clip(
+            source_path,
+            clip_path,
+            start,
+            end,
+            video_filter=video_filter,
+        )
         if not ok:
             return False, None, None, trim_error
 
         base_name = os.path.splitext(filename)[0]
-        clip_filename = f"{base_name}_clip_{int(start)}_{int(end)}.mp4"
+        format_suffix = aspect_ratio.replace(":", "x") if aspect_ratio != "original" else "original"
+        clip_filename = f"{base_name}_clip_{int(start)}_{int(end)}_{format_suffix}.mp4"
 
         with open(clip_path, "rb") as handle:
             clip_buffer = BytesIO(handle.read())

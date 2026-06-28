@@ -25,15 +25,21 @@ export function createClip(
   start = 0,
   end = DEFAULT_CLIP_SECONDS,
   duration = 0,
+  quality = "best",
 ): VideoClip {
   const normalized = normalizeClipInterval(start, end, duration);
   return {
     id: createClipId(),
     ...normalized,
+    aspectRatio: "9:16",
+    outputHeight: 1080,
+    quality,
+    cropFocusX: 0.5,
+    cropFocusY: 0.5,
   };
 }
 
-export function createDefaultClips(duration = 0): VideoClip[] {
+export function createDefaultClips(duration = 0, quality = "best"): VideoClip[] {
   const end = duration > 0 ? Math.min(DEFAULT_CLIP_SECONDS, duration) : DEFAULT_CLIP_SECONDS;
-  return [createClip(0, end, duration)];
+  return [createClip(0, end, duration, quality)];
 }

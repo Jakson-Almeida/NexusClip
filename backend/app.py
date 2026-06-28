@@ -11,6 +11,7 @@ from downloader import (
     download_video,
     list_formats,
 )
+from output_formats import normalize_output_height
 
 logging.basicConfig(level=logging.INFO)
 
@@ -88,7 +89,25 @@ def download_video_clip():
     if not FFMPEG_AVAILABLE:
         return jsonify({"error": "FFmpeg não está instalado no servidor"}), 503
 
-    success, buffer, filename, error = download_clip(video_id, start, end, quality)
+    aspect_ratio = request.args.get("aspectRatio", "original")
+    output_height = request.args.get("outputHeight", "1080")
+
+    try:
+        crop_focus_x = float(request.args.get("cropFocusX", "0.5"))
+        crop_focus_y = float(request.args.get("cropFocusY", "0.5"))
+    except ValueError:
+        return jsonify({"error": "Posição de recorte inválida"}), 400
+
+    success, buffer, filename, error = download_clip(
+        video_id,
+        start,
+        end,
+        quality,
+        aspect_ratio=aspect_ratio,
+        output_height=normalize_output_height(output_height),
+        crop_focus_x=crop_focus_x,
+        crop_focus_y=crop_focus_y,
+    )
     if not success or not buffer or not filename:
         return jsonify({"error": error or "Falha ao gerar corte"}), 503
 

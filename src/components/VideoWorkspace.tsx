@@ -4,12 +4,15 @@ import {
   fetchVideoDuration,
   fetchVideoFormats,
 } from "../services/youtubeApi";
-import type { VideoClip } from "../types/clip";
+import type { ClipAspectRatio, ClipOutputHeight, VideoClip } from "../types/clip";
 import type { VideoFormat, YouTubeSearchItem } from "../types/youtube";
+import { formatOutputSummary } from "../constants/outputFormats";
 import { createClip, createDefaultClips, normalizeClipInterval } from "../utils/clips";
 import { formatSeconds, parseTimeInput } from "../utils/time";
+import ClipFormatControls from "./ClipFormatControls";
 import ClipList from "./ClipList";
 import ClipTimeline from "./ClipTimeline";
+import FormatPreviewOverlay from "./FormatPreviewOverlay";
 import YouTubePlayer, { type YouTubePlayerHandle } from "./YouTubePlayer";
 
 interface VideoWorkspaceProps {
@@ -28,7 +31,6 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
   const [endInput, setEndInput] = useState("0:15");
   const [currentTime, setCurrentTime] = useState(0);
   const [formats, setFormats] = useState<VideoFormat[]>([]);
-  const [quality, setQuality] = useState("best");
   const [loadingFormats, setLoadingFormats] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -67,6 +69,15 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
       }
     },
     [duration, activeClipId],
+  );
+
+  const updateClipSettings = useCallback(
+    (clipId: string, patch: Partial<Pick<VideoClip, "aspectRatio" | "outputHeight" | "quality" | "cropFocusX" | "cropFocusY">>) => {
+      setClips((prev) =>
+        prev.map((clip) => (clip.id === clipId ? { ...clip, ...patch } : clip)),
+      );
+    },
+    [],
   );
 
   useEffect(() => {
@@ -109,7 +120,12 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
     fetchVideoFormats(videoId)
       .then((items) => {
         setFormats(items);
-        setQuality(items[0]?.format_id || "best");
+        const defaultQuality = items[0]?.format_id || "best";
+        setClips((prev) =>
+          prev.map((clip) =>
+            clip.quality === "best" ? { ...clip, quality: defaultQuality } : clip,
+          ),
+        );
       })
       .finally(() => setLoadingFormats(false));
 
@@ -155,7 +171,8 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
 
     const baseStart = Math.floor(currentTime);
     const baseEnd = baseStart + DEFAULT_CLIP_SECONDS;
-    const newClip = createClip(baseStart, baseEnd, duration);
+    const defaultQuality = formats[0]?.format_id || activeClip?.quality || "best";
+    const newClip = createClip(baseStart, baseEnd, duration, defaultQuality);
 
     setClips((prev) => [...prev, newClip]);
     setActiveClipId(newClip.id);
@@ -291,7 +308,11 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
         videoId,
         start: startSeconds,
         end: endSeconds,
-        quality,
+        quality: activeClip.quality,
+        aspectRatio: activeClip.aspectRatio,
+        outputHeight: activeClip.outputHeight,
+        cropFocusX: activeClip.cropFocusX,
+        cropFocusY: activeClip.cropFocusY,
       });
 
       const url = URL.createObjectURL(blob);
@@ -336,11 +357,25 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
         </a>
       </div>
 
-      <YouTubePlayer
-        videoId={videoId}
-        onReady={handlePlayerReady}
-        onTimeUpdate={handleTimeUpdate}
-      />
+      <div className="player-with-format">
+        <YouTubePlayer
+          videoId={videoId}
+          onReady={handlePlayerReady}
+          onTimeUpdate={handleTimeUpdate}
+        />
+        {activeClip && (
+          <FormatPreviewOverlay
+            aspectRatio={activeClip.aspectRatio}
+            outputHeight={activeClip.outputHeight}
+            focusX={activeClip.cropFocusX}
+            focusY={activeClip.cropFocusY}
+            disabled={!playerReady}
+            onFocusChange={(cropFocusX, cropFocusY) =>
+              updateClipSettings(activeClip.id, { cropFocusX, cropFocusY })
+            }
+          />
+        )}
+      </div>
 
       <div className="clip-panel">
         <ClipList
@@ -350,6 +385,23 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
           onAdd={addClip}
           onRemove={removeClip}
         />
+
+        {activeClip && (
+          <ClipFormatControls
+            aspectRatio={activeClip.aspectRatio}
+            outputHeight={activeClip.outputHeight}
+            quality={activeClip.quality}
+            formats={formats}
+            loadingFormats={loadingFormats}
+            onAspectRatioChange={(aspectRatio: ClipAspectRatio) =>
+              updateClipSettings(activeClip.id, { aspectRatio })
+            }
+            onOutputHeightChange={(outputHeight: ClipOutputHeight) =>
+              updateClipSettings(activeClip.id, { outputHeight })
+            }
+            onQualityChange={(quality) => updateClipSettings(activeClip.id, { quality })}
+          />
+        )}
 
         <div className="clip-panel-header">
           <h3>
@@ -428,22 +480,11 @@ export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
 
         <p className="clip-summary">
           Corte ativo: {formatSeconds(startSeconds)} → {formatSeconds(endSeconds)} (
-          {formatSeconds(clipDuration)})
+          {formatSeconds(clipDuration)}) ·{" "}
+          {activeClip
+            ? formatOutputSummary(activeClip.aspectRatio, activeClip.outputHeight)
+            : "—"}
         </p>
-
-        {!loadingFormats && formats.length > 0 && (
-          <label className="field quality-field">
-            <span>Qualidade</span>
-            <select value={quality} onChange={(event) => setQuality(event.target.value)}>
-              {formats.map((format) => (
-                <option key={format.format_id} value={format.format_id}>
-                  {format.quality}
-                  {format.filesize_mb ? ` (~${format.filesize_mb} MB)` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
 
         {error && <p className="form-error">{error}</p>}
 

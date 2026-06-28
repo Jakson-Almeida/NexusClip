@@ -1,4 +1,5 @@
 import type { VideoClip } from "../types/clip";
+import { formatOutputSummary } from "../constants/outputFormats";
 import { formatSeconds } from "../utils/time";
 
 interface ClipListProps {
@@ -44,6 +45,9 @@ export default function ClipList({
                 <span className="clip-list-range">
                   {formatSeconds(clip.start)} → {formatSeconds(clip.end)} (
                   {formatSeconds(clipDuration)})
+                </span>
+                <span className="clip-list-format">
+                  {formatOutputSummary(clip.aspectRatio, clip.outputHeight)}
                 </span>
               </button>
               {clips.length > 1 && (

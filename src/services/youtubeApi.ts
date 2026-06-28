@@ -96,12 +96,20 @@ export async function downloadClip(params: {
   start: number;
   end: number;
   quality: string;
+  aspectRatio: string;
+  outputHeight: number;
+  cropFocusX: number;
+  cropFocusY: number;
 }) {
   const query = new URLSearchParams({
     videoId: params.videoId,
     start: String(params.start),
     end: String(params.end),
     quality: params.quality,
+    aspectRatio: params.aspectRatio,
+    outputHeight: String(params.outputHeight),
+    cropFocusX: String(params.cropFocusX),
+    cropFocusY: String(params.cropFocusY),
   });
 
   const response = await fetch(`/api/clip?${query.toString()}`);
