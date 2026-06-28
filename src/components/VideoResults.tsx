@@ -2,15 +2,10 @@ import type { YouTubeSearchItem } from "../types/youtube";
 
 interface VideoResultsProps {
   videos: YouTubeSearchItem[];
-  selectedVideoId?: string;
   onSelect: (video: YouTubeSearchItem) => void;
 }
 
-export default function VideoResults({
-  videos,
-  selectedVideoId,
-  onSelect,
-}: VideoResultsProps) {
+export default function VideoResults({ videos, onSelect }: VideoResultsProps) {
   if (videos.length === 0) {
     return (
       <p className="empty-state">Nenhum vídeo encontrado para esta busca.</p>
@@ -29,7 +24,7 @@ export default function VideoResults({
           <button
             key={videoId}
             type="button"
-            className={`video-card${selectedVideoId === videoId ? " is-selected" : ""}`}
+            className="video-card"
             onClick={() => onSelect(video)}
           >
             {thumbnail && (

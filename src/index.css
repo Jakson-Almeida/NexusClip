@@ -102,6 +102,26 @@ body {
   color: var(--text);
 }
 
+.main-content--clip {
+  padding-top: 1.25rem;
+}
+
+.back-button {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.back-button:hover {
+  color: var(--accent);
+}
+
 /* Intro */
 
 .intro {

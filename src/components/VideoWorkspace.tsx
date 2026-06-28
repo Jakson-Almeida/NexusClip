@@ -10,9 +10,10 @@ import YouTubePlayer from "./YouTubePlayer";
 
 interface VideoWorkspaceProps {
   video: YouTubeSearchItem;
+  onBack: () => void;
 }
 
-export default function VideoWorkspace({ video }: VideoWorkspaceProps) {
+export default function VideoWorkspace({ video, onBack }: VideoWorkspaceProps) {
   const videoId = video.id.videoId;
   const [duration, setDuration] = useState(0);
   const [startInput, setStartInput] = useState("0:00");
@@ -135,6 +136,10 @@ export default function VideoWorkspace({ video }: VideoWorkspaceProps) {
 
   return (
     <section className="video-workspace">
+      <button type="button" className="back-button" onClick={onBack}>
+        ← Voltar aos resultados
+      </button>
+
       <div className="workspace-header">
         <div>
           <h2 className="workspace-title">{video.snippet.title}</h2>

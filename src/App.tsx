@@ -14,6 +14,16 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
 
+  const handleVideoSelect = (video: YouTubeSearchItem) => {
+    setSelectedVideo(video);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleBackToResults = () => {
+    setSelectedVideo(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const handleSearch = async (query: string) => {
     setLoading(true);
     setError(null);
@@ -25,7 +35,7 @@ export default function App() {
       setHasSearched(true);
 
       if (results.length === 1) {
-        setSelectedVideo(results[0]);
+        handleVideoSelect(results[0]);
       }
     } catch (err) {
       setVideos([]);
@@ -36,31 +46,33 @@ export default function App() {
     }
   };
 
+  const isClipView = selectedVideo !== null;
+
   return (
     <div className="app">
       <Header />
-      <main className="main-content">
-        <section className="intro">
-          <h1 className="intro-title">Encontre o vídeo e selecione o corte</h1>
-          <p className="intro-text">
-            Busque podcasts, entrevistas ou qualquer vídeo do YouTube. Escolha manualmente
-            o intervalo que deseja exportar.
-          </p>
-        </section>
-
-        <SearchBar onSearch={handleSearch} loading={loading} />
-
-        {error && <p className="form-error centered">{error}</p>}
-
-        {hasSearched && !loading && (
-          <VideoResults
-            videos={videos}
-            selectedVideoId={selectedVideo?.id.videoId}
-            onSelect={setSelectedVideo}
-          />
+      <main className={`main-content${isClipView ? " main-content--clip" : ""}`}>
+        {!isClipView && (
+          <section className="intro">
+            <h1 className="intro-title">Encontre o vídeo e selecione o corte</h1>
+            <p className="intro-text">
+              Busque podcasts, entrevistas ou qualquer vídeo do YouTube. Escolha manualmente
+              o intervalo que deseja exportar.
+            </p>
+          </section>
         )}
 
-        {selectedVideo && <VideoWorkspace video={selectedVideo} />}
+        {!isClipView && <SearchBar onSearch={handleSearch} loading={loading} />}
+
+        {!isClipView && error && <p className="form-error centered">{error}</p>}
+
+        {!isClipView && hasSearched && !loading && (
+          <VideoResults videos={videos} onSelect={handleVideoSelect} />
+        )}
+
+        {isClipView && selectedVideo && (
+          <VideoWorkspace video={selectedVideo} onBack={handleBackToResults} />
+        )}
       </main>
       <Footer />
     </div>
