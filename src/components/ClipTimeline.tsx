@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from "react";
+import type { VideoClip } from "../types/clip";
 import { formatSeconds } from "../utils/time";
 
 interface ClipTimelineProps {
@@ -6,6 +7,8 @@ interface ClipTimelineProps {
   start: number;
   end: number;
   currentTime: number;
+  backgroundClips?: VideoClip[];
+  activeClipId?: string;
   disabled?: boolean;
   onChange: (start: number, end: number) => void;
   onSeek: (time: number) => void;
@@ -23,6 +26,8 @@ export default function ClipTimeline({
   start,
   end,
   currentTime,
+  backgroundClips = [],
+  activeClipId,
   disabled = false,
   onChange,
   onSeek,
@@ -113,6 +118,8 @@ export default function ClipTimeline({
     setViewCenter(nextCenter);
   };
 
+  const inactiveClips = backgroundClips.filter((clip) => clip.id !== activeClipId);
+
   return (
     <div className={`clip-timeline${disabled ? " is-disabled" : ""}`}>
       <div className="clip-timeline-toolbar">
@@ -174,6 +181,20 @@ export default function ClipTimeline({
 
       <div className="clip-timeline-track" onClick={handleTrackClick}>
         <div className="clip-timeline-rail" />
+        {inactiveClips.map((clip) => {
+          const clipStart = toViewportPercent(clip.start);
+          const clipEnd = toViewportPercent(clip.end);
+          return (
+            <div
+              key={clip.id}
+              className="clip-timeline-selection clip-timeline-selection--background"
+              style={{
+                left: `${clipStart}%`,
+                width: `${Math.max(0, clipEnd - clipStart)}%`,
+              }}
+            />
+          );
+        })}
         <div
           className="clip-timeline-selection"
           style={{ left: `${startPercent}%`, width: `${endPercent - startPercent}%` }}
